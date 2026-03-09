@@ -41,7 +41,8 @@ python tools/convert_hf_to_torch_dist.py \
 
 ### 4.1 启动 SGLang 服务
 
-训练前需先启动两个 SGLang 推理服务（分别用于 Executor/Verifier 和 Planner）：
+训练需启动两个 SGLang 推理服务（分别用于 Executor/Verifier 和 Planner）：
+注意，agentflow_qwen25_7b_rl_v2.sh里面会杀掉所有的python进程，所以最好等训练脚本的脚本kill完进程开始加载之后训练进程之后再启动SGLang推理服务
 
 ```bash
 # Executor / Verifier 使用的 coder 模型（端口 30001）
