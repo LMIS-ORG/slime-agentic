@@ -28,13 +28,27 @@ huggingface-cli download Qwen/Qwen2.5-7B-Instruct \
 ## 3. Convert Model Format
 
 slime training requires converting HuggingFace checkpoints to Megatron distributed format:
-
 ```bash
-cd /path/to/slime
+cd /path/to/slime-agentic
+source scripts/models/qwen2.5-7B.sh 
+
 python tools/convert_hf_to_torch_dist.py \
+  ${MODEL_ARGS[@]} \
   --hf-checkpoint /data/Qwen2.5-7B-Instruct \
   --save /data/qwen2.5_7b_dist/
 ```
+
+convert Megatron distributed format model to huggingface format:
+```bash
+cd /path/to/slime-agentic
+source scripts/models/qwen2.5-7B.sh
+PYTHONPATH=/root/Megatron-LM python tools/convert_torch_dist_to_hf.py   --input-dir /data/AgentFlow_Qwen25-7B-RL/iter_00000xxx/   --output-dir /data/agentflow_xxx_hf   --origin-hf-dir /data/Qwen2.5-7B-Instruct
+```
+
+- `--input-dir`：the path of the torch_dist checkpoint saved during training
+- `--output-dir`：the path of the converted HuggingFace format checkpoint
+- `--origin-hf-dir`：the path of the original HuggingFace model (used to fill in config files)
+
 
 ## 4. Training
 
