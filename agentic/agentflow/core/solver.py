@@ -13,7 +13,6 @@ from .memory import Memory
 
 logger = logging.getLogger(__name__)
 
-
 class Solver:
     """
     engine_map 示例：
@@ -72,25 +71,25 @@ class Solver:
             "final_output": "",
         }
 
-        # 第一轮：planner analysis，模型生成参与 loss（mask=1）
+        turns = []
+        total_token_count = 0
+
+        # ── Plan（独立训练序列 #0）──
         analysis = await self.planner.plan(question)
-        token_ids   = list(analysis.token_ids)
-        loss_mask   = [1] * len(analysis.token_ids)
-        log_probs   = list(analysis.log_probs)
+        turns.append({
+            "tokens": list(analysis.prompt_token_ids) + list(analysis.token_ids),
+            "response_length": len(analysis.token_ids),
+            "loss_mask": [1] * len(analysis.token_ids),
+            "rollout_log_probs": list(analysis.log_probs),
+        })
+        total_token_count += len(analysis.prompt_token_ids) + len(analysis.token_ids)
         response_text = analysis.response
         finish_reason = analysis.finish_reason
         trajectory["analysis"] = analysis.response
 
         for step_count in range(self.max_steps):
             try:
-                # ── next_step prompt（注入，mask=0）+ next_step 生成（mask=1）──
-                next_step_prompt_text = self.planner.get_next_step_prompt_text(
-                    question, analysis.response, memory,
-                    step_count=step_count, max_step_count=self.max_steps,
-                )
-                next_step_prompt_ids = self._engine.tokenizer(
-                    next_step_prompt_text, add_special_tokens=False
-                )["input_ids"]
+                # ── next_step（独立训练序列 #1, #2, ...）──
                 next_step = await self.planner.generate_next_step(
                     question, memory, analysis.response,
                     step_count=step_count, max_step_count=self.max_steps,
@@ -99,15 +98,22 @@ class Solver:
                 logger.warning("[step %d] planner.generate_next_step failed: %s", step_count, e)
                 break
 
-            token_ids   += next_step_prompt_ids + next_step.token_ids
-            loss_mask   += [0] * len(next_step_prompt_ids) + [1] * len(next_step.token_ids)
-            log_probs   += [0.0] * len(next_step_prompt_ids) + next_step.log_probs
-            response_text += next_step_prompt_text + next_step.response
+            turns.append({
+                "tokens": list(next_step.prompt_token_ids) + list(next_step.token_ids),
+                "response_length": len(next_step.token_ids),
+                "loss_mask": [1] * len(next_step.token_ids),
+                "rollout_log_probs": list(next_step.log_probs),
+            })
+            total_token_count += len(next_step.prompt_token_ids) + len(next_step.token_ids)
+            response_text += (
+                f"\n\n===== [next_step prompt] =====\n{next_step.prompt_text}"
+                f"\n===== [next_step response] =====\n{next_step.response}"
+            )
             finish_reason = next_step.finish_reason
 
             context, sub_goal, tool_name = extract_context_subgoal_and_tool(next_step.response)
 
-            # ── 执行工具（不拼入序列），结果写入 memory ──
+            # ── 执行工具（不拼入训练序列），结果写入 memory ──
             try:
                 tool_command, _ = await self.executor.generate_tool_command(
                     question, context, sub_goal, tool_name,
@@ -121,7 +127,12 @@ class Solver:
             memory.add_action(step_count, tool_name, sub_goal, tool_command, execution_result)
             logger.debug("[step %d] execution_result: %s", step_count, execution_result)
 
-            # ── verifier（不拼入序列），仅用于判断是否继续 ──
+            response_text += (
+                f"\n===== [executor] tool={tool_name} =====\n{tool_command}"
+                f"\n===== [execution_result] =====\n{execution_result}"
+            )
+
+            # ── verifier（不拼入训练序列），仅用于判断是否继续 ──
             try:
                 _, conclusion, _ = await self.verifier.verificate_context(
                     question, analysis.response, step_count=step_count, memory=memory,
@@ -131,6 +142,7 @@ class Solver:
                 conclusion = "STOP"
 
             logger.debug("[step %d] conclusion: %s", step_count, conclusion)
+            response_text += f"\n===== [verifier] conclusion={conclusion} =====\n"
 
             trajectory["steps"].append({
                 "step_count": step_count,
@@ -145,18 +157,26 @@ class Solver:
             if conclusion == "STOP":
                 break
 
-            if len(token_ids) >= self.MAX_TOTAL_TOKENS:
+            if total_token_count >= self.MAX_TOTAL_TOKENS:
                 logger.info("token budget exhausted (%d >= %d), stopping early at step %d",
-                            len(token_ids), self.MAX_TOTAL_TOKENS, step_count)
+                            total_token_count, self.MAX_TOTAL_TOKENS, step_count)
                 break
 
-        # ── final_output 拼入序列（mask=0）──
+        # ── final_output（独立训练序列，最后一条）──
+        final_output_text = ""
         try:
-            final_output = await self.planner.generate_final_output(question, memory)
-            token_ids   += final_output.prompt_token_ids + final_output.token_ids
-            loss_mask   += [0] * len(final_output.prompt_token_ids) + [0] * len(final_output.token_ids)
-            log_probs   += [0.0] * (len(final_output.prompt_token_ids) + len(final_output.token_ids))
-            response_text += final_output.prompt_text + final_output.response
+            final_output = await self.planner.generate_final_output(analysis.response, question, memory)
+            turns.append({
+                "tokens": list(final_output.prompt_token_ids) + list(final_output.token_ids),
+                "response_length": len(final_output.token_ids),
+                "loss_mask": [1] * len(final_output.token_ids),
+                "rollout_log_probs": list(final_output.log_probs),
+            })
+            final_output_text = final_output.response
+            response_text += (
+                f"\n\n===== [final_output prompt] =====\n{final_output.prompt_text}"
+                f"\n===== [final_output response] =====\n{final_output.response}"
+            )
             trajectory["final_output"] = final_output.response
         except Exception as e:
             logger.warning("planner.generate_final_output failed: %s", e)
@@ -165,13 +185,30 @@ class Solver:
 
         self._save_trajectory(trajectory)
 
+        # 构建拼接序列供框架兼容（reward、eval、status 等仍需要一个完整 sample）
+        # 真正的训练数据由 custom_convert 通过 turns 展开
+        first = turns[0]
+        first_prompt_len = len(first["tokens"]) - first["response_length"]
+        prompt_token_ids = first["tokens"][:first_prompt_len]
+
+        cat_token_ids = list(first["tokens"][first_prompt_len:])
+        cat_loss_mask = list(first["loss_mask"])
+        cat_log_probs = list(first["rollout_log_probs"])
+
+        for t in turns[1:]:
+            t_prompt_len = len(t["tokens"]) - t["response_length"]
+            cat_token_ids += t["tokens"]
+            cat_loss_mask += [0] * t_prompt_len + t["loss_mask"]
+            cat_log_probs += [0.0] * t_prompt_len + t["rollout_log_probs"]
+
         return GenerationOutput(
             prompt_text=analysis.prompt_text,
-            prompt_token_ids=analysis.prompt_token_ids,
+            prompt_token_ids=prompt_token_ids,
             response=response_text,
-            token_ids=token_ids,
-            log_probs=log_probs,
+            token_ids=cat_token_ids,
+            log_probs=cat_log_probs,
             finish_reason=finish_reason,
-            loss_mask=loss_mask,
-            final_output=final_output.response,
+            loss_mask=cat_loss_mask,
+            final_output=final_output_text,
+            turns=turns,
         )

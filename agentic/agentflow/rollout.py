@@ -100,6 +100,7 @@ def eval_log(rollout_id, args, data, extra_metrics) -> bool:
 
 # ── Generate ──────────────────────────────────────────────────────────────────
 
+
 async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], evaluation: bool = False) -> Sample:
     """
     符合 Slime 框架要求的异步 AgentFlow 生成函数。
@@ -109,7 +110,7 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
 
     state = GenerateState(args)
     url = f"http://{args.sglang_router_ip}:{args.sglang_router_port}/generate"
-    engine = SGLangEngine(url=url, tokenizer=state.tokenizer, sampling_params=sampling_params, max_new_tokens=2048, enable_thinking=False)
+    engine = SGLangEngine(url=url, tokenizer=state.tokenizer, sampling_params=sampling_params, max_new_tokens=4096, enable_thinking=False)
 
     question = sample.prompt if isinstance(sample.prompt, str) else sample.prompt[-1]["content"]
 
@@ -122,14 +123,14 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
         url="http://127.0.0.1:30000/generate",
         tokenizer=state.tokenizer,
         sampling_params=sampling_params,
-        max_new_tokens=2048,
+        max_new_tokens=4096,
     )
 
     coder_engine = SGLangEngine(
         url="http://127.0.0.1:30001/generate",
         tokenizer=state.tokenizer,
         sampling_params=sampling_params,
-        max_new_tokens=2048,
+        max_new_tokens=4096,
     )
     try:
         engine_map = {
@@ -157,6 +158,9 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
         sample.status = Sample.Status.TRUNCATED if out.finish_reason == "length" else Sample.Status.COMPLETED
         sample.metadata["final_output"] = out.final_output or ""
 
+        if out.turns:
+            sample.train_metadata = {"turns": out.turns}
+
     except Exception:
         traceback.print_exc()
         sample.response = ""
@@ -164,7 +168,6 @@ async def generate(args: Any, sample: Sample, sampling_params: dict[str, Any], e
         sample.status = Sample.Status.FAILED
 
     return sample
-
 
 # ── Reward function ───────────────────────────────────────────────────────────
 
@@ -214,7 +217,7 @@ async def reward_func(args: Any, sample: Sample, **kwargs) -> dict:
         url="http://127.0.0.1:30000/generate",
         tokenizer=state.tokenizer,
         sampling_params={},
-        max_new_tokens=512,
+        max_new_tokens=2048,
     )
     rewarder = Rewarder(llm_engine=engine)
 

@@ -286,7 +286,7 @@ async def run_eval(
         url=executor_url,
         tokenizer=tokenizer,
         sampling_params={},
-        max_new_tokens=512,
+        max_new_tokens=2048,
     )
 
     # verifier 与 rollout.py 保持一致：使用 executor_engine（generate_engine，非 coder_engine）
@@ -378,9 +378,9 @@ def parse_args() -> argparse.Namespace:
 
     # 采样参数
     samp_grp = p.add_argument_group("采样参数")
-    samp_grp.add_argument("--temperature",    type=float, default=0.0)
+    samp_grp.add_argument("--temperature",    type=float, default=0.7)
     samp_grp.add_argument("--top-p",          type=float, default=0.95)
-    samp_grp.add_argument("--max-new-tokens", type=int,   default=2048)
+    samp_grp.add_argument("--max-new-tokens", type=int,   default=4096)
 
     # 推理控制
     infer_grp = p.add_argument_group("推理控制")

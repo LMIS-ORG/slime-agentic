@@ -171,11 +171,12 @@ Rules:
         messages = [{"role": "user", "content": content}]
         return await self.llm_engine.generate(messages)
 
-    async def generate_final_output(self, question: str, memory: Memory) -> str:
+    async def generate_final_output(self, query_analysis: str, question: str, memory: Memory) -> str:
         prompt_generate_final_output = f"""
 Task: Generate the final output based on the query and the results from all tools used.
 
 Context:
+- **Initial Analysis:** {query_analysis}
 - **Query:** {question}
 - **Actions Taken:** {memory.get_actions()}
 

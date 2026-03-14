@@ -18,6 +18,8 @@ class GenerationOutput:
     loss_mask: list[int] | None = None
     # planner 的最终综合回答，用于 reward 打分
     final_output: str | None = None
+    # 多轮拆分：每个 turn 是一条独立训练序列，custom_convert 用此字段展开
+    turns: list[dict] | None = None
 
 
 class SGLangEngine:

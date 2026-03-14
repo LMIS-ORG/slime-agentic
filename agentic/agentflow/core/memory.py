@@ -62,7 +62,7 @@ class Memory:
                 'description': desc
             })
 
-    MAX_RESULT_CHARS = 2000
+    MAX_RESULT_CHARS = 4096
 
     def add_action(self, step_count: int, tool_name: str, sub_goal: str, command: str, result: Any) -> None:
         result_str = str(result) if result is not None else ""

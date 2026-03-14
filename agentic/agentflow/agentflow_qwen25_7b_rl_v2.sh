@@ -61,7 +61,7 @@ ROLLOUT_ARGS=(
    --n-samples-per-prompt 8       
    --rollout-max-response-len 32768 
    --rollout-temperature 0.7      
-   --global-batch-size 64    
+   --global-batch-size 64   
    --balance-data
 )
 
@@ -148,6 +148,7 @@ CUSTOM_ARGS=(
    --custom-generate-function-path rollout.generate
    --custom-rm-path rollout.reward_func
    --custom-eval-rollout-log-function-path rollout.eval_log
+   --custom-convert-samples-to-train-data-path custom_convert.custom_convert
 )
 
 # Launch Ray head node
